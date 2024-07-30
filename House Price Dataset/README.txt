@@ -1,1 +1,1 @@
-Implement a Linear Regression Model to predict the prices of houses based on their square footage and the number of bedrooms and bathrooms.
+This project implements a linear regression model to predict house prices based on their square footage and overall quality. The dataset used for this project is from Kaggle, which includes three CSV files: train, test, and submission.
