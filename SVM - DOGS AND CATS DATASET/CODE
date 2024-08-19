@@ -1,0 +1,80 @@
+import os
+import cv2
+import numpy as np
+from sklearn import svm
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import make_pipeline
+
+train_dir = r"C:/Users/ishaa/Downloads/train"
+test_dir = r"C:/Users/ishaa/Downloads/test1"
+
+def load_images_from_folder(folder):
+    images = []
+    labels = []
+    if not os.path.exists(folder):
+        raise FileNotFoundError(f"The directory {folder} does not exist.")
+    
+    for filename in os.listdir(folder):
+        img_path = os.path.join(folder, filename)
+        img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
+        if img is not None:
+            img = cv2.resize(img, (64, 64)) 
+            images.append(img.flatten())
+            
+            if 'dog' in filename.lower():
+                labels.append(0)  
+            elif 'cat' in filename.lower():
+                labels.append(1)  
+
+    if not images:
+        print("No images found in training folder.")
+    return np.array(images), np.array(labels)
+
+def load_images_for_prediction(folder):
+    images = []
+    filenames = []
+    if not os.path.exists(folder):
+        raise FileNotFoundError(f"The directory {folder} does not exist.")
+    
+    for filename in os.listdir(folder):
+        img_path = os.path.join(folder, filename)
+        img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
+        if img is not None:
+            img = cv2.resize(img, (64, 64)) 
+            images.append(img.flatten())
+            filenames.append(filename)
+    
+    if not images:
+        print("No images found in test folder.")
+    return np.array(images), filenames
+
+
+print("Loading training data...")
+X_train, y_train = load_images_from_folder(train_dir)
+print(f"Training data loaded: {X_train.shape[0]} images.")
+
+print("Loading test data...")
+X_test, test_filenames = load_images_for_prediction(test_dir)
+print(f"Test data loaded: {X_test.shape[0]} images.")
+
+if X_train.size == 0 or X_test.size == 0:
+    print("No data loaded for training or testing.")
+else:
+   
+    print("Training model...")
+    pipeline = make_pipeline(
+        StandardScaler(),
+        svm.SVC(kernel='linear', C=1.0)  
+    )
+
+    pipeline.fit(X_train, y_train)
+
+    print("Predicting test data...")
+    y_test_pred = pipeline.predict(X_test)
+
+    class_names = ['dogs', 'cats']
+    predicted_labels = [class_names[label] for label in y_test_pred]
+
+    print("Predictions:")
+    for filename, label in zip(test_filenames, predicted_labels):
+        print(f'{filename}: {label}')
