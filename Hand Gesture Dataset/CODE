@@ -1,0 +1,134 @@
+import numpy as np
+import pandas as pd
+import os
+import cv2
+import tensorflow as tf
+from sklearn.model_selection import train_test_split
+from keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras import layers, models
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.metrics import confusion_matrix, classification_report, accuracy_score
+
+data_dir = '/content/leapGestRecog'
+
+image_paths = []
+image_labels = []
+
+for category in os.listdir(data_dir):
+    for label in os.listdir(os.path.join(data_dir, category)):
+        for image in os.listdir(os.path.join(data_dir, category, label)):
+            image_path = os.path.join(data_dir, category, label, image)
+            image_paths.append(image_path)
+            image_labels.append(label)
+
+image_df = pd.DataFrame({'Images': image_paths, 'Labels': image_labels})
+print(image_df.head())
+
+print(image_df['Labels'].value_counts())
+
+X_train, X_test = train_test_split(image_df, test_size=0.2, random_state=42)
+train_df, val_df = train_test_split(X_train, test_size=0.3, random_state=42)
+
+image_gen = ImageDataGenerator(preprocessing_function=tf.keras.applications.mobilenet_v2.preprocess_input)
+
+train_gen = image_gen.flow_from_dataframe(dataframe=train_df, x_col='Images', y_col='Labels',
+                                          target_size=(224, 224), color_mode='rgb',
+                                          class_mode='categorical', batch_size=8, shuffle=True)
+
+val_gen = image_gen.flow_from_dataframe(dataframe=val_df, x_col='Images', y_col='Labels',
+                                        target_size=(224, 224), color_mode='rgb',
+                                        class_mode='categorical', batch_size=8, shuffle=False)
+
+test_gen = image_gen.flow_from_dataframe(dataframe=X_test, x_col='Images', y_col='Labels',
+                                         target_size=(224, 224), color_mode='rgb',
+                                         class_mode='categorical', batch_size=8, shuffle=False)
+
+class_names = list(train_gen.class_indices.keys())
+print("Class Labels:", class_names)
+
+def visualize_batch(image_gen):
+    images, labels = next(image_gen)
+    plt.figure(figsize=(20, 20))
+    for i in range(min(len(labels), 16)):
+        plt.subplot(4, 4, i + 1)
+        image = (images[i] + 1) / 2  # Rescale images
+        plt.imshow(image)
+        plt.title(class_names[np.argmax(labels[i])], color="blue", fontsize=14)
+        plt.axis('off')
+    plt.show()
+
+visualize_batch(train_gen)
+
+model = models.Sequential([
+    layers.Conv2D(128, (8, 8), strides=(3, 3), activation='relu', input_shape=(224, 224, 3)),
+    layers.BatchNormalization(),
+    layers.Conv2D(256, (5, 5), padding='same', activation='relu'),
+    layers.BatchNormalization(),
+    layers.MaxPooling2D((3, 3)),
+    layers.Conv2D(256, (3, 3), padding='same', activation='relu'),
+    layers.BatchNormalization(),
+    layers.Conv2D(256, (1, 1), padding='same', activation='relu'),
+    layers.BatchNormalization(),
+    layers.Conv2D(512, (3, 3), padding='same', activation='relu'),
+    layers.BatchNormalization(),
+    layers.MaxPooling2D((2, 2)),
+    layers.Conv2D(512, (3, 3), padding='same', activation='relu'),
+    layers.BatchNormalization(),
+    layers.MaxPooling2D((2, 2)),
+    layers.Flatten(),
+    layers.Dense(1024, activation='relu'),
+    layers.Dropout(0.5),
+    layers.Dense(1024, activation='relu'),
+    layers.Dropout(0.5),
+    layers.Dense(len(class_names), activation='softmax')
+])
+
+model.compile(optimizer=tf.optimizers.SGD(learning_rate=0.001),
+              loss='categorical_crossentropy',
+              metrics=['accuracy'])
+
+model.summary()
+
+history = model.fit(train_gen, epochs=5, validation_data=val_gen, verbose=1)
+
+test_loss, test_acc = model.evaluate(test_gen, verbose=1)
+print(f"Test Accuracy: {test_acc:.2f}")
+
+model.save("hand_gesture_model.h5")
+
+plt.figure(figsize=(12, 4))
+plt.subplot(1, 2, 1)
+plt.plot(history.history['accuracy'], label='Train Accuracy')
+plt.plot(history.history['val_accuracy'], label='Val Accuracy')
+plt.title('Model Accuracy')
+plt.xlabel('Epoch')
+plt.ylabel('Accuracy')
+plt.legend()
+
+plt.subplot(1, 2, 2)
+plt.plot(history.history['loss'], label='Train Loss')
+plt.plot(history.history['val_loss'], label='Val Loss')
+plt.title('Model Loss')
+plt.xlabel('Epoch')
+plt.ylabel('Loss')
+plt.legend()
+
+plt.show()
+
+predictions = model.predict(test_gen)
+pred_labels = np.argmax(predictions, axis=1)
+
+labels_map = {v: k for k, v in train_gen.class_indices.items()}
+pred_class_names = [labels_map[label] for label in pred_labels]
+
+y_test = X_test['Labels']
+print(classification_report(y_test, pred_class_names))
+
+cm = confusion_matrix(y_test, pred_class_names, labels=class_names)
+plt.figure(figsize=(12, 6))
+sns.heatmap(cm, annot=True, fmt='g', cmap='Blues', xticklabels=class_names, yticklabels=class_names)
+plt.title('Confusion Matrix')
+plt.xlabel('Predicted')
+plt.ylabel('Actual')
+plt.show()
